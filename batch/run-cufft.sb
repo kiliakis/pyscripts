@@ -1,0 +1,35 @@
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -p GPU
+#SBATCH --ntasks-per-node 1
+#SBATCH -t 2:00:00
+#SBATCH --gres=gpu:p100:2
+#SBATCH --output "output/run-cufft-%j.out"
+#echo commands to stdout
+set -x
+
+HOME=/home/kiliakis/
+PROJECT=$HOME/git/cpu-gpu-bench/
+#move to working directory
+cd $PROJECT
+
+cd src
+nvcc -O4 -arch=sm_60 --compiler-options '-fPIC' --shared -o cufft.so -lcufft cufft.cu 
+cd ../
+
+cd benchmarks/fft
+#run GPU program
+# LD_LIBRARY_PATH="/opt/packages/cuda/7.5/lib64" python test-histo-cuda.py 10000000 500 10000
+LD_LIBRARY_PATH="/opt/packages/cuda/7.5/lib64" python test-fft-cuda.py 10000000 1000
+  
+mkdir $PROJECT/results/raw
+OUTDIR=$PROJECT/results/raw
+cd benchmarks/fft
+#run GPU program
+# LD_LIBRARY_PATH="/opt/packages/cuda/7.5/lib64" python test-track-pycuda.py
+for p in 1000 10000 100000 1000000 10000000 100000000; do
+    for i in {1..5}; do
+    LD_LIBRARY_PATH="/opt/packages/cuda/7.5/lib64" python test-fft-cuda.py \
+    $p 1000 &>> $OUTDIR/ver-cufft-points-${p}.txt
+    done
+done

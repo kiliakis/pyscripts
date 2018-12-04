@@ -1,0 +1,26 @@
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -p RM 
+#SBATCH --ntasks-per-node 28
+#SBATCH -t 2:00:00
+#SBATCH --output "output/run-fft-numpy-%j.out"
+#echo commands to stdout
+set -x
+
+HOME=/home/kiliakis/
+PROJECT=$HOME/git/cpu-gpu-bench/
+#move to working directory
+cd $PROJECT
+
+mkdir $PROJECT/results/raw
+OUTDIR=$PROJECT/results/raw
+cd benchmarks/fft
+#run GPU program
+# LD_LIBRARY_PATH="/opt/packages/cuda/7.5/lib64" python test-track-pycuda.py
+#for p in 1000 10000 100000 1000000 10000000 100000000; do
+for p in 100000000; do
+    for i in {1..5}; do
+        OMP_NUM_THREADS=28 python test-fft-numpy.py $p 100 &>> \
+        $OUTDIR/ver-fftnumpy-points-${p}.txt
+    done
+done

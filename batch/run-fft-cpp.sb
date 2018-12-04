@@ -1,0 +1,30 @@
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -p RM
+#SBATCH --ntasks-per-node 28
+#SBATCH -t 2:00:00
+#SBATCH --output "output/run-cpu-parallel-fft-%j.out"
+#echo commands to stdout
+set -x
+
+HOME=/home/kiliakis/
+PROJECT=$HOME/git/cpu-gpu-bench/
+#move to working directory
+cd $PROJECT
+
+# Compile
+cd benchmarks/fft
+g++ -O3 -std=c++11 -DFFTW_THREADS -o test-fft-fftw  \
+-L $HOME/install/lib -I $HOME/install/include test-fft-fftw.cpp \
+-lpthread -lfftw3 -lfftw3_threads -lm
+
+
+mkdir $PROJECT/results/raw
+OUTDIR=$PROJECT/results/raw
+#run GPU program
+# LD_LIBRARY_PATH="/opt/packages/cuda/7.5/lib64" python test-track-pycuda.py
+for p in 1000 10000 100000 1000000 10000000 100000000; do
+    for i in {1..5}; do
+        ./test-fft-fftw $p 1000 28 &>> $OUTDIR/ver-fftwcpp-points-${p}.txt
+    done
+done
