@@ -35,25 +35,95 @@ def sort_based_on_order(order, major_arr, *minor_arrs):
         j += 1
 
 
-def evaluate_metrics(datadir, metrics_to_calc, metrics_formulas, constants={}):
+def get_data_per_kernel_no_scan(h, data, stats_to_keep, require_conversion):
+    # The first for loop creates all the keys
+    # The second assigns to each key the value.
+    tempdir = {}
+    for r in data:
+        if r[h.index('metric')] == 'kernel_launch_uid':
+            tempdir['{}/{}'.format(r[h.index('app_and_args')],
+                                   r[h.index('config')])] = r[h.index('valuelist')].split('|')
+    datadir = {}
+    for r in data:
+        metric = r[h.index('metric')]
+        if metric in stats_to_keep:
+            app = r[h.index('app_and_args')]
+            config = r[h.index('config')]
+            vals = r[h.index('valuelist')].split('|')
+            if metric in require_conversion:
+                vals = np.array(vals, float)
+                vals[1:] = vals[1:] - vals[:-1]
+                vals = np.array(vals, str)
+            for name, val in zip(tempdir['{}/{}'.format(app, config)],
+                                 vals):
+                key = '{}/{}'.format(app, name)
+                if key not in datadir:
+                    datadir[key] = {}
+                if metric not in datadir[key]:
+                    datadir[key][metric] = []
+                datadir[key][metric].append(val)
+    return datadir
+
+
+def get_data_per_kernel_with_scan(h, data, stats_to_keep, require_conversion):
+    # The first for loop creates all the keys
+    # The second assigns to each key the value.
+    tempdir = {}
+    for r in data:
+        if r[h.index('metric')] == 'kernel_launch_uid':
+            tempdir['{}/{}'.format(r[h.index('app_and_args')],
+                                   r[h.index('config')])] = r[h.index('valuelist')].split('|')
+    datadir = {}
+    for r in data:
+        metric = r[h.index('metric')]
+        if metric in stats_to_keep:
+            app = r[h.index('app_and_args')]
+            config = r[h.index('config')]
+            vals = r[h.index('valuelist')].split('|')
+            if metric in require_conversion:
+                vals = np.array(vals, float)
+                vals[1:] = vals[1:] - vals[:-1]
+                vals = np.array(vals, str)
+            for name, val in zip(tempdir['{}/{}'.format(app, config)],
+                                 vals):
+                key = '{}/{}'.format(app, name)
+                if key not in datadir:
+                    datadir[key] = {}
+                if metric not in datadir[key]:
+                    datadir[key][metric] = {}
+                if config not in datadir[key][metric]:
+                    datadir[key][metric][config] = []
+                datadir[key][metric][config].append(val)
+    return datadir
+
+
+def evaluate_metrics_no_scan(datadir, metrics_to_calc, metrics_formulas, constants={}):
     metricsdir = {}
     for m_name in metrics_to_calc:
         m_formula = metrics_formulas[m_name]
-        metricsdir[m_name] = {}
+        # metricsdir[m_name] = {}
         for k_name, stats in datadir.items():
             res = m_formula
             for s, val in stats.items():
                 res = res.replace(s, str(np.mean(np.array(val, float))))
             for s, val in constants.items():
                 res = res.replace(s, val)
-            res = eval(res)
+            try:
+                res = eval(res)
+            except Exception as e:
+                print('WARNING {}:{} had the value {} and raised {}'.format(m_name, k_name,
+                                                                            res, e))
+                # print(e)
+                continue
             # if res < 0:
             #     print('WARNING!', res, k_name, stats)
+            if m_name not in metricsdir:
+                metricsdir[m_name] = {}
             metricsdir[m_name][k_name] = res
     return metricsdir
 
 
-def evaluate_metrics2(datadir, metrics_to_calc, metrics_formulas, constants={}):
+def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas, constants={}):
     metricsdir = {}
     for m_name in metrics_to_calc:
         m_formula = metrics_formulas[m_name]
@@ -67,7 +137,8 @@ def evaluate_metrics2(datadir, metrics_to_calc, metrics_formulas, constants={}):
                     metricsdir[m_name][k_name][config] = metricsdir[m_name][k_name][config].replace(
                         stat, str(np.mean(np.array(val, float))))
 
-    for m_name, kernels in metricsdir.items():
+    temp_dir = dict(metricsdir)
+    for m_name, kernels in temp_dir.items():
         for k_name, configs in kernels.items():
             for config, res in configs.items():
                 # if 'shaders' in res:
@@ -75,10 +146,14 @@ def evaluate_metrics2(datadir, metrics_to_calc, metrics_formulas, constants={}):
                 for c, val in constants.items():
                     res = res.replace(c, val)
                 try:
-                    metricsdir[m_name][k_name][config] = eval(res)
+                    res = eval(res)
                 except NameError as e:
                     print('WARNING: {} for {}:{}:{}'.format(
                         e, m_name, k_name, config))
+                    metricsdir[m_name][k_name][config] = float('nan')
+                    continue
+                metricsdir[m_name][k_name][config] = res
+
     return metricsdir
 
 
@@ -92,7 +167,7 @@ def color_y_axis(ax, color):
 def annotate(ax, A, B, **kwargs):
     for x, y in zip(A, B):
         # ax.annotate('%.2f, %.2f' % (x, y), xy=(
-        ax.annotate('%.2f' % (y), xy=(
+        ax.annotate('%.0f' % (y), xy=(
             x, y), textcoords='data', **kwargs)
 
 
