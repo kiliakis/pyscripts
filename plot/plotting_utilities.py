@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import subprocess
+import re
 
 
 def save_and_crop(fig, name, *args, **kw):
@@ -35,12 +36,12 @@ def sort_based_on_order(order, major_arr, *minor_arrs):
         j += 1
 
 
-def get_data_per_kernel_no_scan(h, data, stats_to_keep, require_conversion):
+def get_data_per_kernel_no_scan(h, data, stats_to_keep, require_conversion, warnings=False):
     # The first for loop creates all the keys
     # The second assigns to each key the value.
     tempdir = {}
     for r in data:
-        if r[h.index('metric')] == 'kernel_launch_uid':
+        if r[h.index('metric')] == 'kernel_name':
             tempdir['{}/{}'.format(r[h.index('app_and_args')],
                                    r[h.index('config')])] = r[h.index('valuelist')].split('|')
     datadir = {}
@@ -65,12 +66,12 @@ def get_data_per_kernel_no_scan(h, data, stats_to_keep, require_conversion):
     return datadir
 
 
-def get_data_per_kernel_with_scan(h, data, stats_to_keep, require_conversion):
+def get_data_per_kernel_with_scan(h, data, stats_to_keep, require_conversion, warnings=False):
     # The first for loop creates all the keys
     # The second assigns to each key the value.
     tempdir = {}
     for r in data:
-        if r[h.index('metric')] == 'kernel_launch_uid':
+        if r[h.index('metric')] == 'kernel_name':
             tempdir['{}/{}'.format(r[h.index('app_and_args')],
                                    r[h.index('config')])] = r[h.index('valuelist')].split('|')
     datadir = {}
@@ -97,11 +98,36 @@ def get_data_per_kernel_with_scan(h, data, stats_to_keep, require_conversion):
     return datadir
 
 
-def evaluate_metrics_no_scan(datadir, metrics_to_calc, metrics_formulas, constants={}):
-    metricsdir = {}
+def get_traces_per_kernel_with_scan(h, data, warnings=False):
+    datadir = {}
+    for r in data:
+        app = r[h.index('app_and_args')]
+        config = r[h.index('config')]
+        kname = r[h.index('kernel_name')]
+        ids = r[h.index('kernel_ids')]
+        cycles = r[h.index('cycles')].split('|')
+        if (len(cycles)) == 0 or (cycles[0] == ''):
+            if warnings:
+                print('WARNING Trace problem with {}:{}'.format(app, kname))
+            continue
+        active_threads = r[h.index('active_threads')].split('|')
+        shader_cores = r[h.index('shader_cores')]
+        # metric = 'active_threads'
+        key = '{}/{}'.format(app, kname)
+        if key not in datadir:
+            datadir[key] = {}
+        if config not in datadir[key]:
+            datadir[key][config] = {
+                'x': np.array(cycles, int) - int(cycles[0]),
+                'y': np.array(active_threads, int)}
+    return datadir
+
+
+def evaluate_metrics_no_scan(datadir, metrics_to_calc, metrics_formulas, constants={}, warnings=False):
+    metricsdic = {}
     for m_name in metrics_to_calc:
         m_formula = metrics_formulas[m_name]
-        # metricsdir[m_name] = {}
+        # metricsdic[m_name] = {}
         for k_name, stats in datadir.items():
             res = m_formula
             for s, val in stats.items():
@@ -111,33 +137,34 @@ def evaluate_metrics_no_scan(datadir, metrics_to_calc, metrics_formulas, constan
             try:
                 res = eval(res)
             except Exception as e:
-                print('WARNING {}:{} had the value {} and raised {}'.format(m_name, k_name,
-                                                                            res, e))
+                if warnings:
+                    print('WARNING {}:{} had the value {} and raised {}'.format(m_name, k_name,
+                                                                                res, e))
                 # print(e)
                 continue
             # if res < 0:
             #     print('WARNING!', res, k_name, stats)
-            if m_name not in metricsdir:
-                metricsdir[m_name] = {}
-            metricsdir[m_name][k_name] = res
-    return metricsdir
+            if m_name not in metricsdic:
+                metricsdic[m_name] = {}
+            metricsdic[m_name][k_name] = res
+    return metricsdic
 
 
-def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas, constants={}):
-    metricsdir = {}
+def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas, constants={}, warnings=False):
+    metricsdic = {}
     for m_name in metrics_to_calc:
         m_formula = metrics_formulas[m_name]
-        metricsdir[m_name] = {}
+        metricsdic[m_name] = {}
         for k_name, metrics in datadir.items():
-            metricsdir[m_name][k_name] = {}
+            metricsdic[m_name][k_name] = {}
             for stat, configs in metrics.items():
                 for config, val in configs.items():
-                    if config not in metricsdir[m_name][k_name]:
-                        metricsdir[m_name][k_name][config] = m_formula
-                    metricsdir[m_name][k_name][config] = metricsdir[m_name][k_name][config].replace(
+                    if config not in metricsdic[m_name][k_name]:
+                        metricsdic[m_name][k_name][config] = m_formula
+                    metricsdic[m_name][k_name][config] = metricsdic[m_name][k_name][config].replace(
                         stat, str(np.mean(np.array(val, float))))
 
-    temp_dir = dict(metricsdir)
+    temp_dir = dict(metricsdic)
     for m_name, kernels in temp_dir.items():
         for k_name, configs in kernels.items():
             for config, res in configs.items():
@@ -147,14 +174,56 @@ def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas, const
                     res = res.replace(c, val)
                 try:
                     res = eval(res)
-                except NameError as e:
-                    print('WARNING: {} for {}:{}:{}'.format(
-                        e, m_name, k_name, config))
-                    metricsdir[m_name][k_name][config] = float('nan')
+                except Exception as e:
+                    if warnings:
+                        print('WARNING: {}:{}:{} had the value {} and raised {}'.format(
+                            m_name, k_name, config, res, e))
+                    metricsdic[m_name][k_name][config] = float('nan')
                     continue
-                metricsdir[m_name][k_name][config] = res
+                metricsdic[m_name][k_name][config] = res
 
-    return metricsdir
+    return metricsdic
+
+
+def get_figdic_with_scan(metricsdic, knobs_to_keep, knobs_to_sort, warnings=False):
+    figdic = {}
+    for metric in metricsdic.keys():
+        for app in metricsdic[metric].keys():
+            for conf in metricsdic[metric][app].keys():
+                matches = re.compile('([a-z]+)(\d+:?\d*)').findall(conf)
+                if not matches:
+                    continue
+                # for i in range(len(matches)):
+                knob = ','.join([m[0] for m in matches])
+                # knob = ','.join([m[0] for m in matches])
+                if knob not in knobs_to_keep:
+                    continue
+                if app not in figdic:
+                    figdic[app] = {}
+                if metric not in figdic[app]:
+                    figdic[app][metric] = {}
+                if knob not in figdic[app][metric]:
+                    figdic[app][metric][knob] = {'x': [], 'y': []}
+
+                x = ','.join([m[1] for m in matches])
+                y = float(metricsdic[metric][app][conf])
+                if not np.isnan(y):
+                    figdic[app][metric][knob]['x'].append(x)
+                    figdic[app][metric][knob]['y'].append(y)
+
+    for app in figdic.keys():
+        for metric in figdic[app].keys():
+            for knob, vals in figdic[app][metric].items():
+                x = np.array(vals['x'])
+                y = np.array(vals['y'])
+                sort_with = knobs_to_sort[knobs_to_keep.index(knob)]
+                sort_indices = [knob.split(',').index(k) for k in sort_with]
+                indices = [i[0] for i in sorted(enumerate(x),
+                                                key=lambda a: [int(a[1].split(',')[j]) for j in sort_indices])]
+                x, y = x[indices], y[indices]
+                figdic[app][metric][knob]['x'] = x
+                figdic[app][metric][knob]['y'] = y
+    return figdic
 
 
 def color_y_axis(ax, color):
