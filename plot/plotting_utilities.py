@@ -36,6 +36,17 @@ def sort_based_on_order(order, major_arr, *minor_arrs):
         j += 1
 
 
+def get_stats_from_metrics(metrics_to_calc, metric_formulas, regexp='([a-zA-Z0-9_%]+)'):
+    stats = set()
+    for metric in metrics_to_calc:
+        f = metric_formulas[metric]
+        matches = re.compile(regexp).findall(f)
+        for m in matches:
+            stats.add(m)
+    return list(stats)
+
+
+
 def get_data_per_kernel_no_scan(h, data, stats_to_keep, require_conversion, warnings=False):
     # The first for loop creates all the keys
     # The second assigns to each key the value.
