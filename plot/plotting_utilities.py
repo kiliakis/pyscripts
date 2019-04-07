@@ -46,7 +46,6 @@ def get_stats_from_metrics(metrics_to_calc, metric_formulas, regexp='([a-zA-Z0-9
     return list(stats)
 
 
-
 def get_data_per_kernel_no_scan(h, data, stats_to_keep, require_conversion, warnings=False):
     # The first for loop creates all the keys
     # The second assigns to each key the value.
@@ -196,41 +195,82 @@ def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas, const
     return metricsdic
 
 
-def get_figdic_with_scan(metricsdic, knobs_to_keep, knobs_to_sort, warnings=False):
+def get_figdic_with_scan(metricdic_lst, basedic=None, metrics_to_norm=[],
+                         knobs_to_keep=None, knobs_to_sort=None, warnings=False):
     figdic = {}
-    for metric in metricsdic.keys():
-        for app in metricsdic[metric].keys():
-            for conf in metricsdic[metric][app].keys():
-                matches = re.compile('([a-z]+)(\d+:?\d*)').findall(conf)
-                if not matches:
-                    continue
-                # for i in range(len(matches)):
-                knob = ','.join([m[0] for m in matches])
-                # knob = ','.join([m[0] for m in matches])
-                if knob not in knobs_to_keep:
-                    continue
-                if app not in figdic:
-                    figdic[app] = {}
-                if metric not in figdic[app]:
-                    figdic[app][metric] = {}
-                if knob not in figdic[app][metric]:
-                    figdic[app][metric][knob] = {'x': [], 'y': []}
+    if not isinstance(metricdic_lst, (list,)):
+        metricdic_lst = [metricdic_lst]
 
-                x = ','.join([m[1] for m in matches])
-                y = float(metricsdic[metric][app][conf])
-                if not np.isnan(y):
-                    figdic[app][metric][knob]['x'].append(x)
-                    figdic[app][metric][knob]['y'].append(y)
+    for metricdic in metricdic_lst:
+        for metric in metricdic.keys():
+            for app in metricdic[metric].keys():
+                for conf in metricdic[metric][app].keys():
+                    val = metricdic[metric][app][conf]
+                    if basedic and (metric in metrics_to_norm):
+                        # Check that the same config exists in the other dir.
+                        if (metric in basedic) and (app in basedic[metric]):
+                            if conf in basedic[metric][app]:
+                                val_base = float(basedic[metric][app][conf])
+                            else:
+                                val_base = np.mean(
+                                    [float(v) for v in basedic[metric][app].values()])
+                        else:
+                            if warnings:
+                                print('WARNING {}:{} not in basedic'.format(
+                                    metric, app))
+                            continue
+                    else:
+                        val_base = 1
+
+                    if np.isnan(val_base) or np.isnan(val):
+                        continue
+
+                    matches = re.compile('([a-z]+)_([a-z\d_]+)').findall(conf)
+
+                    if not matches:
+                        matches = re.compile('([a-z]+)(\d+:?\d*)').findall(conf)
+                        # matches = re.compile('([a-z]+)(\d+)').findall(conf)
+                        if not matches:
+                            if warnings:
+                                print('{}:{} Problem with matching the expression {}'.format(
+                                    app, metric, conf))
+                            continue
+
+                    # for i in range(len(matches)):
+                    knob = ','.join([m[0] for m in matches])
+                    # knob = ','.join([m[0] for m in matches])
+                    if knobs_to_keep and (knob not in knobs_to_keep):
+                        continue
+                    if app not in figdic:
+                        figdic[app] = {}
+                    if metric not in figdic[app]:
+                        figdic[app][metric] = {}
+                    if knob not in figdic[app][metric]:
+                        figdic[app][metric][knob] = {'x': [], 'y': []}
+
+                    x = ','.join([m[1] for m in matches])
+                    y = float(metricdic[metric][app][conf]) / float(val_base)
+                    if not np.isnan(y):
+                        figdic[app][metric][knob]['x'].append(x)
+                        figdic[app][metric][knob]['y'].append(y)
 
     for app in figdic.keys():
         for metric in figdic[app].keys():
             for knob, vals in figdic[app][metric].items():
                 x = np.array(vals['x'])
                 y = np.array(vals['y'])
-                sort_with = knobs_to_sort[knobs_to_keep.index(knob)]
-                sort_indices = [knob.split(',').index(k) for k in sort_with]
-                indices = [i[0] for i in sorted(enumerate(x),
-                                                key=lambda a: [int(a[1].split(',')[j]) for j in sort_indices])]
+                if knobs_to_keep and knobs_to_sort:
+                    sort_with = knobs_to_sort[knobs_to_keep.index(knob)]
+                    sort_indices = [knob.split(',').index(k) for k in sort_with]
+                else:
+                    sort_indices = [0]
+                try:
+                    indices = [i[0] for i in sorted(enumerate(x),
+                                                    key=lambda a: [int(a[1].split(',')[j]) for j in sort_indices])]
+                except:
+                    indices = [i[0] for i in sorted(enumerate(x),
+                                                    key=lambda a: [a[1].split(',')[j] for j in sort_indices])]
+
                 x, y = x[indices], y[indices]
                 figdic[app][metric][knob]['x'] = x
                 figdic[app][metric][knob]['y'] = y
@@ -303,6 +343,9 @@ def data_to_dir(header, data, key_names, keep_only=None):
 
     return d
 
+def get_values(v, h, s):
+    return np.array(v[:, h.index(s)], float)
+
 
 def get_plots(h, data, key_names, exclude=[]):
     d = {}
@@ -310,7 +353,9 @@ def get_plots(h, data, key_names, exclude=[]):
         match = True
         key = ''
         for k, v in key_names.items():
-            if r[h.index(k)] in v:
+            if v is None:
+                key += r[h.index(k)] + '-'
+            elif r[h.index(k)] in v:
                 key += r[h.index(k)] + '-'
             else:
                 match = False
