@@ -325,6 +325,24 @@ def group_by(header, list1, key_names, prefixes=None):
     return d
 
 
+
+def dictify(h, data, key_names, cols, prefixes=None):
+    d = {}
+    if prefixes is None:
+        prefixes = len(key_names) * ['']
+    for r in data:
+        key = ''
+        for k in key_names:
+            key += prefixes[key_names.index(k)] + r[h.index(k)]
+        if key not in d:
+            d[key] = {}
+        for col in cols:
+            assert col in h, '{} not in header'.format(col)
+            if col not in d[key]:
+                d[key][col] = []
+            d[key][col].append(r[h.index(col)])
+    return d
+
 def data_to_dir(header, data, key_names, keep_only=None):
     d = {}
     header = list(header)
