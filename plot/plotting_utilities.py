@@ -76,6 +76,7 @@ def get_data_per_kernel_no_scan(h, data, stats_to_keep, require_conversion, warn
     return datadir
 
 
+
 def get_data_per_kernel_with_scan(h, data, stats_to_keep, require_conversion, warnings=False):
     # The first for loop creates all the keys
     # The second assigns to each key the value.
@@ -120,8 +121,12 @@ def get_traces_per_kernel_with_scan(h, data, warnings=False):
             if warnings:
                 print('WARNING Trace problem with {}:{}'.format(app, kname))
             continue
-        active_threads = r[h.index('active_threads')].split('|')
-        shader_cores = r[h.index('shader_cores')]
+        if 'active_threads' in h:
+            active_threads = r[h.index('active_threads')].split('|')
+            shader_cores = r[h.index('shader_cores')]
+        else:
+            active_threads = r[h.index('warps')].split('|')
+            shader_cores = 0
         # metric = 'active_threads'
         key = '{}/{}'.format(app, kname)
         if key not in datadir:
@@ -277,6 +282,71 @@ def get_figdic_with_scan(metricdic_lst, basedic=None, metrics_to_norm=[],
     return figdic
 
 
+def get_figdic_with_scan_knob_first(metricdic_lst, basedic=None, metrics_to_norm=[],
+                                    knobs_to_keep=None, knobs_to_sort=None, warnings=False):
+    figdic = {}
+    if not isinstance(metricdic_lst, (list,)):
+        metricdic_lst = [metricdic_lst]
+
+    for metricdic in metricdic_lst:
+        for metric in metricdic.keys():
+            for app in metricdic[metric].keys():
+                for conf in metricdic[metric][app].keys():
+                    val = metricdic[metric][app][conf]
+                    if basedic and (metric in metrics_to_norm):
+                        # Check that the same config exists in the other dir.
+                        if (metric in basedic) and (app in basedic[metric]):
+                            if conf in basedic[metric][app]:
+                                val_base = float(basedic[metric][app][conf])
+                            else:
+                                val_base = np.mean(
+                                    [float(v) for v in basedic[metric][app].values()])
+                        else:
+                            if warnings:
+                                print('WARNING {}:{} not in basedic'.format(
+                                    metric, app))
+                            continue
+                    else:
+                        val_base = 1
+
+                    if np.isnan(val_base) or np.isnan(val):
+                        continue
+
+                    knob = conf
+                    if knobs_to_keep and (knob not in knobs_to_keep):
+                        continue
+                    if metric not in figdic:
+                        figdic[metric] = {}
+                    if knob not in figdic[metric]:
+                        figdic[metric][knob] = {'x': [], 'y': []}
+
+                    x = app
+                    y = float(metricdic[metric][app][conf]) / float(val_base)
+                    if not np.isnan(y):
+                        figdic[metric][knob]['x'].append(x)
+                        figdic[metric][knob]['y'].append(y)
+
+    for metric in figdic.keys():
+        for knob, vals in figdic[metric].items():
+            x = np.array(vals['x'])
+            y = np.array(vals['y'])
+            indices = np.argsort(y)
+            figdic[metric][knob]['x'] = x[indices]
+            figdic[metric][knob]['y'] = y[indices]
+
+    return figdic
+
+
+def extract_knob(string, knob):
+    rec = '-?{}_(\w+)-?'.format(knob)
+    rec = re.compile(rec)
+    match = rec.search(string)
+    if match:
+        return string.replace(match.group(0), ''), match.group(1)
+    else:
+        return string, None
+
+
 def color_y_axis(ax, color):
     """Color your axes."""
     for t in ax.get_yticklabels():
@@ -325,7 +395,6 @@ def group_by(header, list1, key_names, prefixes=None):
     return d
 
 
-
 def dictify(h, data, key_names, cols, prefixes=None):
     d = {}
     if prefixes is None:
@@ -342,6 +411,7 @@ def dictify(h, data, key_names, cols, prefixes=None):
                 d[key][col] = []
             d[key][col].append(r[h.index(col)])
     return d
+
 
 def data_to_dir(header, data, key_names, keep_only=None):
     d = {}
@@ -360,6 +430,7 @@ def data_to_dir(header, data, key_names, keep_only=None):
             tempd[r[header.index(key_names[-1])]] = r
 
     return d
+
 
 def get_values(v, h, s):
     return np.array(v[:, h.index(s)], float)
