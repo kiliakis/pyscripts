@@ -46,6 +46,79 @@ def get_stats_from_metrics(metrics_to_calc, metric_formulas, regexp='([a-zA-Z0-9
     return list(stats)
 
 
+# @profile
+def format_data(h, data, target_variables, warnings=True):
+    # first find all parameters
+    # Only a single target variable for now
+    params = set()
+    reg = re.compile('([a-z]+)_([a-z\d_]+)')
+    tempdir = {}
+    for r in data.values:
+        config = r[h.index('config')]
+        match = reg.findall(config)
+        if not match:
+            if warnings:
+                print('Could not match config: {}'.format(config))
+            continue
+        for m in match:
+            if m[0] == 'pw':
+                for pw_sub in ['idocsp', 'idocdp', 'idocsfu', 'idocmem',
+                               'ocexsp', 'ocexdp', 'ocexsfu', 'ocexmem',
+                               'exwb']:
+                    params.add(pw_sub)
+            else:
+                params.add(m[0])
+        if r[h.index('metric')] == 'kernel_name':
+            tempdir['{}/{}'.format(r[h.index('app_and_args')],
+                                   r[h.index('config')])] = str(r[h.index('valuelist')]).split('|')
+    params = list(params)
+    # Now in params there should be all parameters
+    new_data = [['app_args_kernel'] + params + target_variables]
+    for r in data.values:
+        metric = r[h.index('metric')]
+        if metric not in target_variables:
+            continue
+        config = r[h.index('config')]
+        match = reg.findall(config)
+        if not match:
+            continue
+        app_and_args = r[h.index('app_and_args')]
+        values = str(r[h.index('valuelist')]).split('|')
+        n = 1
+        for kernel, kernel_val in zip(tempdir['{}/{}'.format(app_and_args, config)], values):
+            if np.isnan(float(kernel_val)):
+                continue
+            vals = [float('nan')]*len(params)
+            for m in match:
+                param = m[0]
+                if param == 'pw':
+                    # break it into multiple params
+                    for pw_sub, val in zip(['idocsp', 'idocdp', 'idocsfu', 'idocmem',
+                                            'ocexsp', 'ocexdp', 'ocexsfu', 'ocexmem',
+                                            'exwb'], m[1]):
+                        vals[params.index(pw_sub)] = float(val)
+                elif param in ['dssp', 'dssfu', 'dsmem', 'dsgen']:
+                    scheds = ['original', 'oldest', 'fastest',
+                              'slowest', 'warp_lrr', 'most_deps']
+                    vals[params.index(param)] = float(scheds.index(m[1]))
+                else:
+                    vals[params.index(param)] = float(m[1])
+            row = ['{}/{}'.format(app_and_args, kernel)] + \
+                vals + [float(kernel_val)]
+            if len(new_data) > 1 and np.array_equal(new_data[-1][:-1], row[:-1]):
+                new_data[-1][-1] += row[-1]
+                n += 1
+            elif n == 1:
+                new_data.append(row)
+            elif n > 1:
+                new_data[-1][-1] /= n
+                n = 1
+                new_data.append(row)
+        if len(new_data) > 1:
+            new_data[-1][-1] /= n
+    return new_data
+
+
 def get_data_per_kernel_no_scan(h, data, stats_to_keep, require_conversion, warnings=False):
     # The first for loop creates all the keys
     # The second assigns to each key the value.
@@ -74,7 +147,6 @@ def get_data_per_kernel_no_scan(h, data, stats_to_keep, require_conversion, warn
                     datadir[key][metric] = []
                 datadir[key][metric].append(val)
     return datadir
-
 
 
 def get_data_per_kernel_with_scan(h, data, stats_to_keep, require_conversion, warnings=False):
@@ -338,13 +410,29 @@ def get_figdic_with_scan_knob_first(metricdic_lst, basedic=None, metrics_to_norm
 
 
 def extract_knob(string, knob):
-    rec = '-?{}_(\w+)-?'.format(knob)
-    rec = re.compile(rec)
-    match = rec.search(string)
-    if match:
-        return string.replace(match.group(0), ''), match.group(1)
+    if isinstance(knob, str):
+        knob_list = [knob]
     else:
-        return string, None
+        knob_list = knob
+    ret = [string, []]
+    for kn in knob_list:
+        rec = '-?{}_(\w+)-?'.format(kn)
+        rec = re.compile(rec)
+        match = rec.search(string)
+        if match:
+            repl = match.group(0)
+            if repl[0] == repl[-1] and repl[0] == '-':
+                repl = repl[:-1]
+            ret[0] = ret[0].replace(repl, '')
+            ret[1].append(match.group(1))
+        else:
+            # ret[0](string)
+            ret[1].append(None)
+
+    if isinstance(knob, str):
+        return ret[0], ret[1][0]
+    else:
+        return ret[0], ret[1]
 
 
 def color_y_axis(ax, color):
@@ -357,7 +445,7 @@ def color_y_axis(ax, color):
 def annotate(ax, A, B, **kwargs):
     for x, y in zip(A, B):
         # ax.annotate('%.2f, %.2f' % (x, y), xy=(
-        ax.annotate('%.0f' % (y), xy=(
+        ax.annotate('%.1f' % (y), xy=(
             x, y), textcoords='data', **kwargs)
 
 
@@ -436,16 +524,17 @@ def get_values(v, h, s):
     return np.array(v[:, h.index(s)], float)
 
 
-def get_plots(h, data, key_names, exclude=[]):
+def get_plots(h, data, key_names, exclude=[], prefix=False):
     d = {}
     for r in data:
         match = True
         key = ''
         for k, v in key_names.items():
             if v is None:
-                key += r[h.index(k)] + '-'
+                key += '{}{}_'.format(k, r[h.index(k)])
             elif r[h.index(k)] in v:
-                key += r[h.index(k)] + '-'
+                key += '{}{}_'.format(k, r[h.index(k)])
+                # key += r[h.index(k)] + '-'
             else:
                 match = False
                 break
