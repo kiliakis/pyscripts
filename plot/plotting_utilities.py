@@ -36,9 +36,13 @@ def sort_based_on_order(order, major_arr, *minor_arrs):
         j += 1
 
 
-def get_stats_from_metrics(metrics_to_calc, metric_formulas, regexp='([a-zA-Z0-9_%]+)'):
+def get_stats_from_metrics(metrics_to_calc, metric_formulas,
+                           regexp='([a-zA-Z0-9_%]+)', row_stats=[]):
     stats = set()
     for metric in metrics_to_calc:
+        if metric in row_stats:
+            stats.add(metric)
+            continue
         f = metric_formulas[metric]
         matches = re.compile(regexp).findall(f)
         for m in matches:
@@ -237,10 +241,14 @@ def evaluate_metrics_no_scan(datadir, metrics_to_calc, metrics_formulas, constan
     return metricsdic
 
 
-def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas, constants={}, warnings=False):
+def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas,
+                               constants={}, row_stats=[], warnings=False):
     metricsdic = {}
     for m_name in metrics_to_calc:
-        m_formula = metrics_formulas[m_name]
+        if m_name in row_stats:
+            m_formula = m_name
+        else:
+            m_formula = metrics_formulas[m_name]
         metricsdic[m_name] = {}
         for k_name, metrics in datadir.items():
             metricsdic[m_name][k_name] = {}
