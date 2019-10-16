@@ -214,6 +214,34 @@ def get_traces_per_kernel_with_scan(h, data, warnings=False):
     return datadir
 
 
+def get_ilp_per_kernel_with_scan(h, data, warnings=False):
+    datadir = {}
+    for r in data:
+        app = r[h.index('app_and_args')]
+        config = r[h.index('config')]
+        kname = r[h.index('kernel_name')]
+        ids = r[h.index('kernel_ids')]
+        instr = r[h.index('kernel_ids')+1:]
+
+        # cycles = r[h.index('cycles')].split('|')
+        if (len(instr)) == 0 or (instr[0] == ''):
+            if warnings:
+                print('WARNING Trace problem with {}:{}'.format(app, kname))
+            continue
+        # if 'active_threads' in h:
+        #     active_threads = r[h.index('active_threads')].split('|')
+        #     shader_cores = r[h.index('shader_cores')]
+        # else:
+        #     active_threads = r[h.index('warps')].split('|')
+        #     shader_cores = 0
+        # metric = 'active_threads'
+        key = '{}/{}'.format(app, kname)
+        if key not in datadir:
+            datadir[key] = {}
+        if config not in datadir[key]:
+            datadir[key][config] = np.array(instr, dtype=float)
+    return datadir
+
 def evaluate_metrics_no_scan(datadir, metrics_to_calc, metrics_formulas, constants={}, warnings=False):
     metricsdic = {}
     for m_name in metrics_to_calc:
@@ -242,7 +270,8 @@ def evaluate_metrics_no_scan(datadir, metrics_to_calc, metrics_formulas, constan
 
 
 def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas,
-                               constants={}, row_stats=[], warnings=False):
+                               stats_aggregator={}, constants={},
+                               row_stats=[], warnings=False):
     metricsdic = {}
     for m_name in metrics_to_calc:
         if m_name in row_stats:
@@ -256,8 +285,16 @@ def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas,
                 for config, val in configs.items():
                     if config not in metricsdic[m_name][k_name]:
                         metricsdic[m_name][k_name][config] = m_formula
+                    if stats_aggregator.get(stat, 'avg') == 'sum':
+                        to_replace = str(np.sum(np.array(val, float)))
+                    elif stats_aggregator.get(stat, 'avg') == 'avg':
+                        to_replace = str(np.mean(np.array(val, float)))
+                    else:
+                        print('ERROR: {}:{}:{} requires unknow {} aggragator'.format(
+                            m_name, k_name, stat, stats_aggregator.get(stat)))
+                        continue
                     metricsdic[m_name][k_name][config] = metricsdic[m_name][k_name][config].replace(
-                        stat, str(np.mean(np.array(val, float))))
+                        stat, to_replace)
 
     temp_dir = dict(metricsdic)
     for m_name, kernels in temp_dir.items():
