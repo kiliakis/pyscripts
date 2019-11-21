@@ -285,10 +285,15 @@ def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas,
                 for config, val in configs.items():
                     if config not in metricsdic[m_name][k_name]:
                         metricsdic[m_name][k_name][config] = m_formula
-                    if stats_aggregator.get(stat, 'avg') == 'sum':
+                    if stats_aggregator.get(stat) == 'sum':
                         to_replace = str(np.sum(np.array(val, float)))
-                    elif stats_aggregator.get(stat, 'avg') == 'avg':
+                    elif stats_aggregator.get(stat) == 'avg':
                         to_replace = str(np.mean(np.array(val, float)))
+                    elif stats_aggregator.get(stat) == 'max':
+                        to_replace = str(np.max(np.array(val, float)))
+                    elif stats_aggregator.get(stat) == 'min':
+                        to_replace = str(np.min(np.array(val, float)))
+
                     else:
                         print('ERROR: {}:{}:{} requires unknow {} aggragator'.format(
                             m_name, k_name, stat, stats_aggregator.get(stat)))
