@@ -242,6 +242,7 @@ def get_ilp_per_kernel_with_scan(h, data, warnings=False):
             datadir[key][config] = np.array(instr, dtype=float)
     return datadir
 
+
 def evaluate_metrics_no_scan(datadir, metrics_to_calc, metrics_formulas, constants={}, warnings=False):
     metricsdic = {}
     for m_name in metrics_to_calc:
@@ -320,6 +321,135 @@ def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas,
                 metricsdic[m_name][k_name][config] = res
 
     return metricsdic
+
+
+def calc_mixed_metrics_with_scan(basedic, loogdic,
+                                 metrics, formulas,
+                                 constants={},
+                                 knobs_to_keep=None,
+                                 knobs_to_sort=None,
+                                 warnings=False):
+    tempdic = {}
+    regexp = re.compile('(\w+):(\w+)')
+    # for fname, formula in formulas.items():
+    for fname in metrics:
+        formula = formulas[fname]
+        tempdic[fname] = {}
+        matches = regexp.findall(formula)
+        for m in matches:
+            if m[0] == 'base':
+                dic = basedic
+            elif m[0] == 'loog':
+                dic = loogdic
+            else:
+                continue
+            for app in dic[m[1]].keys():
+                for knob, val in dic[m[1]][app].items():
+                    if knob not in knobs_to_keep:
+                        continue
+                    name = knobs_to_keep[knob]
+
+                    if app not in tempdic[fname]:
+                        tempdic[fname][app] = {}
+                    if name not in tempdic[fname][app]:
+                        tempdic[fname][app][name] = formula
+                    tempdic[fname][app][name] = tempdic[fname][app][name].replace(
+                        '{}:{}'.format(m[0], m[1]), str(val))
+    figdic = {}
+    for fname in tempdic.keys():
+        for app in tempdic[fname].keys():
+            for conf, val in tempdic[fname][app].items():
+                res = val
+                for c, cval in constants.items():
+                    res = res.replace(c, cval)
+                try:
+                    res = eval(res)
+                except Exception as e:
+                    if warnings:
+                        print('WARNING: {}:{}:{} had the value {} and raised {}'.format(
+                            fname, app, conf, res, e))
+                    continue
+                if fname not in figdic:
+                    figdic[fname] = {}
+                if app not in figdic[fname]:
+                    figdic[fname][app] = {}
+                if conf not in figdic[fname][app]:
+                    figdic[fname][app][conf] = res
+    return figdic
+
+    # for metric in basedic.keys():
+    #     for app in metricdic[metric].keys():
+    #         for conf in metricdic[metric][app].keys():
+    #             val = metricdic[metric][app][conf]
+    #             if basedic and (metric in metrics_to_norm):
+    #                 # Check that the same config exists in the other dir.
+    #                 if (metric in basedic) and (app in basedic[metric]):
+    #                     if conf in basedic[metric][app]:
+    #                         val_base = float(basedic[metric][app][conf])
+    #                     else:
+    #                         val_base = np.mean(
+    #                             [float(v) for v in basedic[metric][app].values()])
+    #                 else:
+    #                     if warnings:
+    #                         print('WARNING {}:{} not in basedic'.format(
+    #                             metric, app))
+    #                     continue
+    #             else:
+    #                 val_base = 1
+
+    #             if np.isnan(val_base) or np.isnan(val):
+    #                 continue
+
+    #             matches = re.compile('([a-z]+)_([a-z\d_]+)').findall(conf)
+
+    #             if not matches:
+    #                 matches = re.compile('([a-z]+)(\d+:?\d*)').findall(conf)
+    #                 # matches = re.compile('([a-z]+)(\d+)').findall(conf)
+    #                 if not matches:
+    #                     if warnings:
+    #                         print('{}:{} Problem with matching the expression {}'.format(
+    #                             app, metric, conf))
+    #                     continue
+
+    #             # for i in range(len(matches)):
+    #             knob = ','.join([m[0] for m in matches])
+    #             # knob = ','.join([m[0] for m in matches])
+    #             if knobs_to_keep and (knob not in knobs_to_keep):
+    #                 continue
+    #             if app not in figdic:
+    #                 figdic[app] = {}
+    #             if metric not in figdic[app]:
+    #                 figdic[app][metric] = {}
+    #             if knob not in figdic[app][metric]:
+    #                 figdic[app][metric][knob] = {'x': [], 'y': []}
+
+    #             x = ','.join([m[1] for m in matches])
+    #             y = float(metricdic[metric][app][conf]) / float(val_base)
+    #             if not np.isnan(y):
+    #                 figdic[app][metric][knob]['x'].append(x)
+    #                 figdic[app][metric][knob]['y'].append(y)
+
+    # for app in figdic.keys():
+    #     for metric in figdic[app].keys():
+    #         for knob, vals in figdic[app][metric].items():
+    #             x = np.array(vals['x'])
+    #             y = np.array(vals['y'])
+    #             if knobs_to_keep and knobs_to_sort:
+    #                 sort_with = knobs_to_sort[knobs_to_keep.index(knob)]
+    #                 sort_indices = [knob.split(',').index(k) for k in sort_with]
+    #             else:
+    #                 sort_indices = [0]
+    #             try:
+    #                 indices = [i[0] for i in sorted(enumerate(x),
+    #                                                 key=lambda a: [int(a[1].split(',')[j]) for j in sort_indices])]
+    #             except:
+    #                 indices = [i[0] for i in sorted(enumerate(x),
+    #                                                 key=lambda a: [a[1].split(',')[j] for j in sort_indices])]
+
+    #             x, y = x[indices], y[indices]
+    #             figdic[app][metric][knob]['x'] = x
+    #             figdic[app][metric][knob]['y'] = y
+    # return figdic
 
 
 def get_figdic_with_scan(metricdic_lst, basedic=None, metrics_to_norm=[],
