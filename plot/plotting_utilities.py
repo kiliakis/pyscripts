@@ -2,6 +2,23 @@ import matplotlib.pyplot as plt
 import numpy as np
 import subprocess
 import re
+import collections
+
+def dict_merge(dct, merge_dct):
+    """ Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
+    updating only top-level keys, dict_merge recurses down into dicts nested
+    to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
+    ``dct``.
+    :param dct: dict onto which the merge is executed
+    :param merge_dct: dct merged into dct
+    :return: None
+    """
+    for k, v in merge_dct.items():
+        if (k in dct and isinstance(dct[k], dict)
+                and isinstance(merge_dct[k], collections.Mapping)):
+            dict_merge(dct[k], merge_dct[k])
+        else:
+            dct[k] = merge_dct[k]
 
 
 def save_and_crop(fig, name, *args, **kw):
@@ -282,7 +299,8 @@ def evaluate_metrics_with_scan(datadir, metrics_to_calc, metrics_formulas,
         metricsdic[m_name] = {}
         for k_name, metrics in datadir.items():
             metricsdic[m_name][k_name] = {}
-            for stat, configs in metrics.items():
+            for stat in sorted(metrics.keys(), key=len, reverse=True):
+                configs = metrics[stat]
                 for config, val in configs.items():
                     if config not in metricsdic[m_name][k_name]:
                         metricsdic[m_name][k_name][config] = m_formula
@@ -596,7 +614,7 @@ def extract_knob(string, knob):
         knob_list = knob
     ret = [string, []]
     for kn in knob_list:
-        rec = '-?{}_(\w+)-?'.format(kn)
+        rec = '-?{}_([\w:]+)-?'.format(kn)
         rec = re.compile(rec)
         match = rec.search(string)
         if match:
