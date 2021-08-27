@@ -4,6 +4,10 @@ import subprocess
 import re
 import collections
 
+def running_mean(x, N, axis=None):
+    cumsum = np.cumsum(np.insert(x, 0, 0, axis=0), axis=0)
+    return (cumsum[N:] - cumsum[:-N])/N
+
 def dict_merge(dct, merge_dct):
     """ Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
     updating only top-level keys, dict_merge recurses down into dicts nested
@@ -176,14 +180,19 @@ def get_data_per_kernel_with_scan(h, data, stats_to_keep, require_conversion, wa
     tempdir = {}
     for r in data:
         if r[h.index('metric')] == 'kernel_name':
+            if isinstance(r[h.index('valuelist')], float):
+                continue
             tempdir['{}/{}'.format(r[h.index('app_and_args')],
                                    r[h.index('config')])] = r[h.index('valuelist')].split('|')
+        
     datadir = {}
     for r in data:
         metric = r[h.index('metric')]
         if metric in stats_to_keep:
             app = r[h.index('app_and_args')]
             config = r[h.index('config')]
+            if f'{app}/{config}' not in tempdir:
+                continue
             vals = r[h.index('valuelist')].split('|')
             if metric in require_conversion:
                 vals = np.array(vals, float)
@@ -799,6 +808,7 @@ def keep_only(header, dir1, to_keep):
 
 
 def human_format(num):
+    num = float(num)
     magnitude = 0
     while abs(num) >= 1000:
         magnitude += 1
