@@ -722,11 +722,28 @@ def get_values(v, h, s):
     return np.array(v[:, h.index(s)], float)
 
 
-def get_plots(h, data, key_names, exclude=[], prefix=False):
+def get_plots(h, data, key_names, exclude=[], linefilter=[], prefix=False):
     d = {}
     for r in data:
         match = True
         key = ''
+        # filter out not needed rows
+        for lf in linefilter:
+            # we need to check that all filter requirements are met
+            skip = 0
+            for k,v in lf.items():
+                if r[h.index(k)] in v:
+                    skip += 1
+                else:
+                    break
+            # if all requirement are met, set skip to -1
+            if skip == len(lf) and skip > 0:
+                skip = -1
+                break
+        # if skip is -1, means that row needs to be skipped
+        if skip == -1:
+            continue
+
         for k, v in key_names.items():
             if v is None:
                 key += '{}{}_'.format(k, r[h.index(k)])
@@ -748,6 +765,7 @@ def get_plots(h, data, key_names, exclude=[], prefix=False):
     for k, v in d.items():
         d[k] = np.array(v)
     return d
+
 
 # def new_group_by(header, data, key_names, d={}):
 #     if not key_names:
