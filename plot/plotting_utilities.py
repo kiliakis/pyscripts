@@ -737,6 +737,7 @@ def get_plots(h, data, key_names, exclude=[], linefilter=[], prefix=False):
         match = True
         key = ''
         # filter out not needed rows
+        skip = 0
         for lf in linefilter:
             # we need to check that all filter requirements are met
             skip = 0
